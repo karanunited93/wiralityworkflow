@@ -894,8 +894,16 @@ function renderTaskPanel(task, canEdit, acct) {
     '<select id="tp-priority" ' + (canEdit?'':'disabled') + ' onchange="saveTaskField(\'priority\')">' +
     ['low','medium','high','urgent'].map(function(p){return '<option value="'+p+'"'+(task.priority===p?' selected':'')+'>'+p.charAt(0).toUpperCase()+p.slice(1)+'</option>';}).join('') +
     '</select></div>';
+  // Filter assignee to account team; fall back to all people
+  var tpTeam = [];
+  if (acct) {
+    acct.team = acct.team || [];
+    var teamIds = [acct.lead].concat(acct.team.filter(function(id){return id !== acct.lead;}));
+    tpTeam = STATE.people.filter(function(p){return teamIds.indexOf(p.id) >= 0;});
+  }
+  if (tpTeam.length === 0) tpTeam = STATE.people;
   leftHtml += '<div class="tp-field"><label>Assignee</label><select id="tp-assignee" ' + (canEdit&&isLead()?'':'disabled') + ' onchange="saveTaskField(\'assignee\')">' +
-    STATE.people.map(function(p){return '<option value="'+p.id+'"'+(task.assignee===p.id?' selected':'')+'>'+p.name+'</option>';}).join('') +
+    tpTeam.map(function(p){return '<option value="'+p.id+'"'+(task.assignee===p.id?' selected':'')+'>'+p.name+'</option>';}).join('') +
     '</select></div>';
   leftHtml += '</div>';
 
@@ -966,11 +974,39 @@ function renderSubtasks(task, canEdit) {
   html += '</div></div>';
 
   // Items
+  // Build assignable people list from current task's account team
+  var stPeople = STATE.people;
+  if (EDIT_TASK_ID) {
+    var stTask = STATE.tasks.find(function(t){return t.id === EDIT_TASK_ID;});
+    if (stTask) {
+      var stAcct = (typeof getAccount === 'function') ? getAccount(stTask.acctId) : null;
+      if (stAcct) {
+        stAcct.team = stAcct.team || [];
+        var stIds = [stAcct.lead].concat(stAcct.team.filter(function(id){return id!==stAcct.lead;}));
+        var filtered = STATE.people.filter(function(p){return stIds.indexOf(p.id)>=0;});
+        if (filtered.length > 0) stPeople = filtered;
+      }
+    }
+  }
+
   subtasks.forEach(function(s, i) {
     var rowBg = s.done ? 'background:#F9F9F7;' : 'background:#fff;';
+    var assignee = s.assignee || '';
+    var ap = assignee ? STATE.people.find(function(p){return p.id===assignee;}) : null;
     html += '<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:6px;margin-bottom:4px;border:1px solid rgba(0,0,0,' + (s.done?'0.05':'0.08') + ');' + rowBg + 'transition:background 0.1s">';
     html += '<input type="checkbox" ' + (s.done?'checked':'') + (canEdit?' onclick="toggleSubtask('+i+')"':' disabled') + ' style="width:15px;height:15px;flex-shrink:0;cursor:' + (canEdit?'pointer':'default') + ';accent-color:#1D9E75">';
     html += '<span style="flex:1;font-size:12px;' + (s.done?'text-decoration:line-through;color:#A8A69E;':'color:#18170F;') + '">' + s.text + '</span>';
+    // Assignee picker
+    if (canEdit) {
+      html += '<select onchange="assignSubtask('+i+',this.value)" style="font-size:11px;border:1px solid rgba(0,0,0,0.1);border-radius:4px;padding:2px 4px;background:#fff;font-family:inherit;color:#6A6860;max-width:90px;cursor:pointer" title="Assign subtask">';
+      html += '<option value="">' + (ap ? ap.name.split(' ')[0] : 'Assign') + '</option>';
+      stPeople.forEach(function(p){
+        html += '<option value="'+p.id+'"'+(s.assignee===p.id?' selected':'')+'>'+p.name.split(' ')[0]+'</option>';
+      });
+      html += '</select>';
+    } else if (ap) {
+      html += '<div class="av av-sm ' + ap.color + '" title="' + ap.name + '">' + ap.initials + '</div>';
+    }
     if (canEdit) {
       html += '<button onclick="deleteSubtask('+i+')" class="del-btn" style="background:none;border:none;cursor:pointer;font-size:13px;color:#D0CEC8;padding:2px 4px;border-radius:3px;flex-shrink:0">✕</button>';
     }
@@ -1066,14 +1102,55 @@ function awardApproved(task) {
 }
 
 function addSubtask() {
-  var text = prompt('Subtask description:');
-  if (!text || !text.trim()) return;
+  var task = STATE.tasks.find(function(t){return t.id === EDIT_TASK_ID;});
+  if (!task) return;
+
+  // Build team list for this account
+  var stPeople = STATE.people;
+  var stAcct = getAccount(task.acctId);
+  if (stAcct) {
+    stAcct.team = stAcct.team || [];
+    var stIds = [stAcct.lead].concat(stAcct.team.filter(function(id){return id!==stAcct.lead;}));
+    var filtered = STATE.people.filter(function(p){return stIds.indexOf(p.id)>=0;});
+    if (filtered.length > 0) stPeople = filtered;
+  }
+
+  var html = '<div class="modal">';
+  html += '<div class="modal-title">Add Subtask</div>';
+  html += '<div class="form-group"><label class="form-label">Description</label><input class="form-input" id="ns-text" placeholder="Subtask description" autofocus></div>';
+  html += '<div class="form-group"><label class="form-label">Assign To</label><select class="form-select" id="ns-assignee">';
+  html += '<option value="">Unassigned</option>';
+  stPeople.forEach(function(p){ html += '<option value="'+p.id+'">'+p.name+' — '+p.role+'</option>'; });
+  html += '</select></div>';
+  html += '<div class="modal-footer"><button class="btn-xs btn-ghost" onclick="closeModal()">Cancel</button>';
+  html += '<button class="btn" onclick="confirmAddSubtask()">Add</button></div></div>';
+  showModal(html);
+  setTimeout(function(){ var el=document.getElementById('ns-text'); if(el) el.focus(); }, 50);
+}
+
+function confirmAddSubtask() {
+  var text = (document.getElementById('ns-text').value || '').trim();
+  if (!text) { alert('Enter a description'); return; }
+  var assignee = document.getElementById('ns-assignee').value || '';
   var task = STATE.tasks.find(function(t){return t.id === EDIT_TASK_ID;});
   if (!task) return;
   task.subtasks = task.subtasks || [];
-  task.subtasks.push({text:text.trim(), done:false});
+  task.subtasks.push({text:text, done:false, assignee:assignee});
   task.activity = task.activity || [];
-  task.activity.push({type:'subtask',user:STATE.currentUser.id,text:'Added subtask: '+text.trim(),time:new Date().toISOString()});
+  var assigneeName = assignee ? getPerson(assignee).name : 'Unassigned';
+  task.activity.push({type:'subtask',user:STATE.currentUser.id,text:'Added subtask: '+text+' → '+assigneeName,time:new Date().toISOString()});
+  saveToStorage();
+  closeModal();
+  document.getElementById('tp-subtasks').innerHTML = renderSubtasks(task, true);
+}
+
+function assignSubtask(idx, personId) {
+  var task = STATE.tasks.find(function(t){return t.id === EDIT_TASK_ID;});
+  if (!task || !task.subtasks || !task.subtasks[idx]) return;
+  task.subtasks[idx].assignee = personId;
+  var name = personId ? getPerson(personId).name : 'Unassigned';
+  task.activity = task.activity || [];
+  task.activity.push({type:'subtask',user:STATE.currentUser.id,text:'Subtask "'+task.subtasks[idx].text+'" assigned to '+name,time:new Date().toISOString()});
   saveToStorage();
   document.getElementById('tp-subtasks').innerHTML = renderSubtasks(task, true);
 }
