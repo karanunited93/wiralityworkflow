@@ -884,7 +884,7 @@ function renderTaskPanel(task, canEdit, acct) {
   // Title
   leftHtml += '<textarea class="tp-title" id="tp-title" ' + (canEdit?'':'readonly') + ' onchange="saveTaskField(\'title\')" onblur="saveTaskField(\'title\')">' + (task.title || '') + '</textarea>';
 
-  // Fields row
+  // Row 1: Status + Priority
   leftHtml += '<div class="tp-field-row">';
   leftHtml += '<div class="tp-field"><label>Status</label>' +
     '<select id="tp-stage" ' + (canEdit?'':'disabled') + ' onchange="saveTaskField(\'stage\',true)">' +
@@ -894,19 +894,20 @@ function renderTaskPanel(task, canEdit, acct) {
     '<select id="tp-priority" ' + (canEdit?'':'disabled') + ' onchange="saveTaskField(\'priority\')">' +
     ['low','medium','high','urgent'].map(function(p){return '<option value="'+p+'"'+(task.priority===p?' selected':'')+'>'+p.charAt(0).toUpperCase()+p.slice(1)+'</option>';}).join('') +
     '</select></div>';
-  // Filter assignee to account team; fall back to all people
-  var tpTeam = [];
-  if (acct) {
-    acct.team = acct.team || [];
-    var teamIds = [acct.lead].concat(acct.team.filter(function(id){return id !== acct.lead;}));
-    tpTeam = STATE.people.filter(function(p){return teamIds.indexOf(p.id) >= 0;});
-  }
-  if (tpTeam.length === 0) tpTeam = STATE.people;
-  leftHtml += '<div class="tp-field"><label>Assignee</label><select id="tp-assignee" ' + (canEdit&&isLead()?'':'disabled') + ' onchange="saveTaskField(\'assignee\')">' +
-    tpTeam.map(function(p){return '<option value="'+p.id+'"'+(task.assignee===p.id?' selected':'')+'>'+p.name+'</option>';}).join('') +
-    '</select></div>';
   leftHtml += '</div>';
 
+  // Row 2: Assignee — full width, all team members always visible
+  leftHtml += '<div class="tp-field-row">';
+  leftHtml += '<div class="tp-field" style="flex:1"><label>Assignee</label>';
+  leftHtml += '<select id="tp-assignee" ' + (canEdit?'':'disabled') + ' onchange="saveTaskField(\'assignee\')" style="width:100%">';
+  leftHtml += '<option value="">— Unassigned —</option>';
+  STATE.people.forEach(function(p){
+    leftHtml += '<option value="'+p.id+'"'+(task.assignee===p.id?' selected':'')+'>'+p.name+' ('+p.role+')</option>';
+  });
+  leftHtml += '</select></div>';
+  leftHtml += '</div>';
+
+  // Row 3: Dates
   leftHtml += '<div class="tp-field-row">';
   leftHtml += '<div class="tp-field"><label>Start Date</label><input type="date" id="tp-start" value="'+(task.startDate||'')+'" ' + (canEdit?'':'disabled') + ' onchange="saveTaskField(\'startDate\')"></div>';
   leftHtml += '<div class="tp-field"><label>Due Date</label><input type="date" id="tp-due" value="'+(task.dueDate||'')+'" ' + (canEdit?'':'disabled') + ' onchange="saveTaskField(\'dueDate\')" style="'+(isOverdue(task.dueDate)?'color:#C94040;font-weight:600':'')+'"></div>';
@@ -974,20 +975,8 @@ function renderSubtasks(task, canEdit) {
   html += '</div></div>';
 
   // Items
-  // Build assignable people list from current task's account team
+  // All people available for subtask assignment
   var stPeople = STATE.people;
-  if (EDIT_TASK_ID) {
-    var stTask = STATE.tasks.find(function(t){return t.id === EDIT_TASK_ID;});
-    if (stTask) {
-      var stAcct = (typeof getAccount === 'function') ? getAccount(stTask.acctId) : null;
-      if (stAcct) {
-        stAcct.team = stAcct.team || [];
-        var stIds = [stAcct.lead].concat(stAcct.team.filter(function(id){return id!==stAcct.lead;}));
-        var filtered = STATE.people.filter(function(p){return stIds.indexOf(p.id)>=0;});
-        if (filtered.length > 0) stPeople = filtered;
-      }
-    }
-  }
 
   subtasks.forEach(function(s, i) {
     var rowBg = s.done ? 'background:#F9F9F7;' : 'background:#fff;';
@@ -1104,16 +1093,6 @@ function awardApproved(task) {
 function addSubtask() {
   var task = STATE.tasks.find(function(t){return t.id === EDIT_TASK_ID;});
   if (!task) return;
-
-  // Build team list for this account
-  var stPeople = STATE.people;
-  var stAcct = getAccount(task.acctId);
-  if (stAcct) {
-    stAcct.team = stAcct.team || [];
-    var stIds = [stAcct.lead].concat(stAcct.team.filter(function(id){return id!==stAcct.lead;}));
-    var filtered = STATE.people.filter(function(p){return stIds.indexOf(p.id)>=0;});
-    if (filtered.length > 0) stPeople = filtered;
-  }
 
   var html = '<div class="modal">';
   html += '<div class="modal-title">Add Subtask</div>';
@@ -1601,14 +1580,12 @@ function openAddTaskModal(acctId, stageIdx) {
   html += '<div class="form-group"><label class="form-label">Priority</label><select class="form-select" id="nt-priority">' +
     ['low','medium','high','urgent'].map(function(p){return '<option value="'+p+'">'+p.charAt(0).toUpperCase()+p.slice(1)+'</option>';}).join('') + '</select></div>';
   html += '</div>';
-  // Assignee: lead + team members for this account; fall back to everyone if team not set
-  acct.team = acct.team || [];
-  var assignableIds = [acct.lead].concat(acct.team.filter(function(id){return id !== acct.lead;}));
-  if (assignableIds.length === 0) assignableIds = STATE.people.map(function(p){return p.id;});
-  var assignablePeople = STATE.people.filter(function(p){return assignableIds.indexOf(p.id) >= 0;});
-  if (assignablePeople.length === 0) assignablePeople = STATE.people;
-  html += '<div class="form-group"><label class="form-label">Assignee</label><select class="form-select" id="nt-assignee">' +
-    assignablePeople.map(function(p){return '<option value="'+p.id+'">'+p.name+' — '+p.role+'</option>';}).join('') + '</select></div>';
+  html += '<div class="form-group"><label class="form-label">Assignee</label><select class="form-select" id="nt-assignee">';
+  html += '<option value="">— Unassigned —</option>';
+  STATE.people.forEach(function(p){
+    html += '<option value="'+p.id+'">'+p.name+' ('+p.role+')</option>';
+  });
+  html += '</select></div>';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
   html += '<div class="form-group"><label class="form-label">Start Date</label><input type="date" class="form-input" id="nt-start"></div>';
   html += '<div class="form-group"><label class="form-label">Due Date</label><input type="date" class="form-input" id="nt-due"></div>';
