@@ -907,7 +907,37 @@ function renderTaskPanel(task, canEdit, acct) {
   leftHtml += '</select></div>';
   leftHtml += '</div>';
 
-  // Row 3: Dates
+  // Row 3: Assigned To (multi-person)
+  leftHtml += '<div class="tp-field-row">';
+  leftHtml += '<div class="tp-field" style="flex:1"><label>Assigned To</label>';
+  task.assignedTo = task.assignedTo || [];
+  // Show current assigned people as avatars + add button
+  leftHtml += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 8px;border:1px solid rgba(0,0,0,0.12);border-radius:6px;min-height:36px;background:#fff">';
+  if (task.assignedTo.length === 0) {
+    leftHtml += '<span style="font-size:12px;color:#A8A69E">No one assigned</span>';
+  }
+  task.assignedTo.forEach(function(pid, ai) {
+    var ap = getPerson(pid);
+    leftHtml += '<div style="display:inline-flex;align-items:center;gap:4px;background:#F5F4F0;border-radius:20px;padding:2px 8px 2px 4px;font-size:11px;font-weight:500">';
+    leftHtml += '<div class="av av-sm ' + ap.color + '">' + ap.initials + '</div>';
+    leftHtml += ap.name.split(' ')[0];
+    if (canEdit) leftHtml += '<span onclick="removeAssignedTo(' + ai + ')" style="cursor:pointer;color:#A8A69E;margin-left:3px;font-size:12px">✕</span>';
+    leftHtml += '</div>';
+  });
+  if (canEdit) {
+    leftHtml += '<select onchange="addAssignedTo(this.value);this.value=\'\'" style="font-size:11px;border:none;background:transparent;color:#2B7FD4;cursor:pointer;font-family:inherit;font-weight:500">';
+    leftHtml += '<option value="">+ Add person</option>';
+    STATE.people.forEach(function(p){
+      if (task.assignedTo.indexOf(p.id) < 0) {
+        leftHtml += '<option value="'+p.id+'">'+p.name+'</option>';
+      }
+    });
+    leftHtml += '</select>';
+  }
+  leftHtml += '</div>';
+  leftHtml += '</div></div>';
+
+  // Row 4: Dates
   leftHtml += '<div class="tp-field-row">';
   leftHtml += '<div class="tp-field"><label>Start Date</label><input type="date" id="tp-start" value="'+(task.startDate||'')+'" ' + (canEdit?'':'disabled') + ' onchange="saveTaskField(\'startDate\')"></div>';
   leftHtml += '<div class="tp-field"><label>Due Date</label><input type="date" id="tp-due" value="'+(task.dueDate||'')+'" ' + (canEdit?'':'disabled') + ' onchange="saveTaskField(\'dueDate\')" style="'+(isOverdue(task.dueDate)?'color:#C94040;font-weight:600':'')+'"></div>';
@@ -1206,6 +1236,34 @@ function submitComment() {
 
 function commentKeydown(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); }
+}
+
+function addAssignedTo(personId) {
+  if (!personId || !EDIT_TASK_ID) return;
+  var task = STATE.tasks.find(function(t){return t.id === EDIT_TASK_ID;});
+  if (!task) return;
+  task.assignedTo = task.assignedTo || [];
+  if (task.assignedTo.indexOf(personId) < 0) {
+    task.assignedTo.push(personId);
+    task.activity = task.activity || [];
+    task.activity.push({type:'assign',user:STATE.currentUser.id,text:'Assigned ' + getPerson(personId).name,time:new Date().toISOString()});
+    saveToStorage();
+    var acct = getAccount(task.acctId);
+    renderTaskPanel(task, canEditTask(task), acct);
+  }
+}
+
+function removeAssignedTo(idx) {
+  if (!EDIT_TASK_ID) return;
+  var task = STATE.tasks.find(function(t){return t.id === EDIT_TASK_ID;});
+  if (!task || !task.assignedTo) return;
+  var removed = getPerson(task.assignedTo[idx]).name;
+  task.assignedTo.splice(idx, 1);
+  task.activity = task.activity || [];
+  task.activity.push({type:'assign',user:STATE.currentUser.id,text:'Removed ' + removed,time:new Date().toISOString()});
+  saveToStorage();
+  var acct = getAccount(task.acctId);
+  renderTaskPanel(task, canEditTask(task), acct);
 }
 
 function deleteCurrentTask() {
