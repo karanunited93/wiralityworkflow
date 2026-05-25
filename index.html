@@ -790,23 +790,37 @@ function renderDashboard() {
   html += '<div>';
   html += '<div class="dash-section-title">My Tasks</div>';
   if (myTasks.length === 0) html += '<div style="color:#A8A69E;font-size:12px;padding:8px 0">No open tasks</div>';
-  myTasks.slice(0,6).forEach(function(t) {
+  myTasks.forEach(function(t) {
     var acct = getAccount(t.acctId);
-    html += '<div class="dash-task-item" onclick="openTask(\'' + t.id + '\')">' +
-      (isOverdue(t.dueDate) ? '<div class="dot-red"></div>' : '<div class="dot-green"></div>') +
-      '<div class="dash-task-name">' + t.title + '</div>' +
-      '<div style="font-size:10px;color:#A8A69E">' + (acct ? acct.emoji : '') + '</div>' +
-      priBadge(t.priority) + '</div>';
+    var stages = acct ? acct.stages : ['Backlog','Planning','In Progress','Ready for Review','Approved','Rejected'];
+    html += '<div class="dash-task-item" onclick="openTask(\'' + t.id + '\')" style="flex-direction:column;align-items:flex-start;gap:5px">';
+    // Top row: status badge + task name
+    html += '<div style="display:flex;align-items:center;gap:7px;width:100%">';
+    html += stageBadge(t.stage, stages);
+    html += '<div class="dash-task-name" style="flex:1">' + t.title + '</div>';
+    html += '</div>';
+    // Bottom row: account + priority + due date
+    html += '<div style="display:flex;align-items:center;gap:6px">';
+    html += '<span style="font-size:10px;color:#A8A69E">' + (acct ? acct.emoji + ' ' + acct.name : '') + '</span>';
+    html += priBadge(t.priority);
+    if (t.dueDate) html += '<span style="font-size:10px;color:' + (isOverdue(t.dueDate) ? '#C94040;font-weight:600' : '#A8A69E') + '">' + formatDate(t.dueDate) + '</span>';
+    html += '</div>';
+    html += '</div>';
   });
 
   html += '<div class="dash-section-title" style="margin-top:14px">Overdue</div>';
   if (overdue.length === 0) html += '<div style="color:#A8A69E;font-size:12px;padding:8px 0">All clear ✓</div>';
-  overdue.slice(0,4).forEach(function(t) {
-    html += '<div class="dash-task-item" onclick="openTask(\'' + t.id + '\')" style="border-color:rgba(201,64,64,0.2)">' +
-      '<div class="dot-red"></div>' +
-      '<div class="dash-task-name">' + t.title + '</div>' +
-      '<div style="font-size:10px;color:#C94040;font-weight:600">' + formatDate(t.dueDate) + '</div>' +
-      '</div>';
+  overdue.forEach(function(t) {
+    var acct = getAccount(t.acctId);
+    var stages = acct ? acct.stages : ['Backlog','Planning','In Progress','Ready for Review','Approved','Rejected'];
+    html += '<div class="dash-task-item" onclick="openTask(\'' + t.id + '\')" style="border-color:rgba(201,64,64,0.2);flex-direction:column;align-items:flex-start;gap:5px">';
+    html += '<div style="display:flex;align-items:center;gap:7px;width:100%">';
+    html += stageBadge(t.stage, stages);
+    html += '<div class="dash-task-name" style="flex:1">' + t.title + '</div>';
+    html += '<span style="font-size:10px;color:#C94040;font-weight:600;flex-shrink:0">' + formatDate(t.dueDate) + '</span>';
+    html += '</div>';
+    html += '<span style="font-size:10px;color:#A8A69E">' + (acct ? acct.emoji + ' ' + acct.name : '') + '</span>';
+    html += '</div>';
   });
   html += '</div>';
 
